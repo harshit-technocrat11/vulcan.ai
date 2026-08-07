@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ARES — Hardened System Design</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0a0d12;
+    --panel:#10151d;
+    --panel-2:#141a24;
+    --line:#1f2733;
+    --line-soft:#182029;
+    --text:#c9d3de;
+    --text-dim:#7c8797;
+    --text-faint:#4d5665;
+    --amber:#d9a441;
+    --cyan:#4fb8d9;
+    --red:#e0555a;
+    --green:#3ecf8e;
+    --violet:#9d7cd8;
+    --mono: 'IBM Plex Mono', ui-monospace, monospace;
+    --sans: 'IBM Plex Sans', system-ui, sans-serif;
+  }
+
+  *{box-sizing:border-box; margin:0; padding:0;}
+
+  html{background:var(--bg);}
+  body{
+    background:
+      radial-gradient(ellipse 900px 500px at 15% -5%, rgba(79,184,217,0.06), transparent 60%),
+      radial-gradient(ellipse 700px 500px at 100% 20%, rgba(224,85,90,0.05), transparent 60%),
+      var(--bg);
+    color:var(--text);
+    font-family:var(--sans);
+    line-height:1.5;
+    padding-bottom:80px;
+  }
+
+  /* faint blueprint grid */
+  .grid-overlay{
+    position:fixed; inset:0; pointer-events:none; z-index:0;
+    background-image:
+      linear-gradient(rgba(79,184,217,0.035) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(79,184,217,0.035) 1px, transparent 1px);
+    background-size:34px 34px;
+    mask-image: radial-gradient(ellipse 90% 60% at 50% 0%, black 40%, transparent 100%);
+  }
+
+  a{color:inherit;}
+
+  /* ---------- HEADER ---------- */
+  header{
+    position:relative; z-index:1;
+    max-width:920px; margin:0 auto; padding:64px 24px 40px;
+    border-bottom:1px solid var(--line);
+  }
+  .eyebrow{
+    font-family:var(--mono); font-size:12px; letter-spacing:.18em; text-transform:uppercase;
+    color:var(--cyan); display:flex; align-items:center; gap:10px; margin-bottom:18px;
+  }
+  .eyebrow::before{
+    content:''; width:7px; height:7px; border-radius:50%; background:var(--green);
+    box-shadow:0 0 0 3px rgba(62,207,142,0.15);
+    animation:blink 2.4s ease-in-out infinite;
+  }
+  @keyframes blink{ 0%,100%{opacity:1;} 50%{opacity:.35;} }
+
+  h1{
+    font-family:var(--mono); font-weight:700; font-size:clamp(28px,4.4vw,44px);
+    letter-spacing:-0.01em; color:#eef2f6; margin-bottom:14px;
+  }
+  h1 span{color:var(--text-faint); font-weight:500;}
+
+  .sub{
+    color:var(--text-dim); font-size:15px; max-width:640px; margin-bottom:28px;
+  }
+
+  .meta-row{
+    display:flex; flex-wrap:wrap; gap:10px 28px; font-family:var(--mono); font-size:12px; color:var(--text-faint);
+  }
+  .meta-row div b{color:var(--text-dim); font-weight:500;}
+
+  /* ---------- LEGEND / FILTER ---------- */
+  .filterbar{
+    position:sticky; top:0; z-index:5;
+    backdrop-filter:blur(10px);
+    background:rgba(10,13,18,0.86);
+    border-bottom:1px solid var(--line);
+  }
+  .filterbar-inner{
+    max-width:920px; margin:0 auto; padding:14px 24px;
+    display:flex; flex-wrap:wrap; align-items:center; gap:8px;
+  }
+  .filterbar-label{
+    font-family:var(--mono); font-size:11px; color:var(--text-faint); text-transform:uppercase; letter-spacing:.1em;
+    margin-right:6px;
+  }
+  .chip{
+    font-family:var(--mono); font-size:12px; color:var(--text-dim);
+    background:var(--panel); border:1px solid var(--line);
+    padding:6px 12px; border-radius:20px; cursor:pointer;
+    display:flex; align-items:center; gap:7px;
+    transition:border-color .15s, color .15s, background .15s;
+    user-select:none;
+  }
+  .chip:hover{border-color:var(--text-faint);}
+  .chip .dot{width:6px;height:6px;border-radius:50%; background:var(--text-faint);}
+  .chip[data-tag="security"] .dot{background:var(--red);}
+  .chip[data-tag="scale"] .dot{background:var(--cyan);}
+  .chip[data-tag="reliability"] .dot{background:var(--amber);}
+  .chip[data-tag="corrected"] .dot{background:var(--violet);}
+  .chip.active{
+    color:#eef2f6; background:var(--panel-2); border-color:var(--text-dim);
+  }
+  .chip.active[data-tag="security"]{border-color:var(--red); color:var(--red);}
+  .chip.active[data-tag="scale"]{border-color:var(--cyan); color:var(--cyan);}
+  .chip.active[data-tag="reliability"]{border-color:var(--amber); color:var(--amber);}
+  .chip.active[data-tag="corrected"]{border-color:var(--violet); color:var(--violet);}
+
+  /* ---------- PIPELINE ---------- */
+  main{position:relative; z-index:1; max-width:920px; margin:0 auto; padding:48px 24px 0;}
+
+  .pipeline{position:relative; padding-left:40px;}
+  .pipeline::before{
+    content:''; position:absolute; left:15px; top:6px; bottom:6px; width:1px;
+    background:linear-gradient(var(--line-soft), var(--line) 6%, var(--line) 94%, var(--line-soft));
+  }
+
+  .stage{position:relative; margin-bottom:16px; transition:opacity .25s ease;}
+  .stage.dim{opacity:.28;}
+
+  .stage-index{
+    position:absolute; left:-40px; top:22px; width:31px; height:31px;
+    border-radius:50%; background:var(--panel); border:1px solid var(--line);
+    display:flex; align-items:center; justify-content:center;
+    font-family:var(--mono); font-size:11px; color:var(--text-faint);
+    z-index:2;
+  }
+  .stage.signature .stage-index{
+    border-color:var(--red); color:var(--red);
+    box-shadow:0 0 0 4px rgba(224,85,90,0.08);
+  }
+
+  .card{
+    background:var(--panel); border:1px solid var(--line); border-radius:10px;
+    overflow:hidden;
+  }
+  .stage.signature .card{
+    border-color:rgba(224,85,90,0.4);
+    box-shadow:0 0 0 1px rgba(224,85,90,0.08), 0 12px 32px -12px rgba(224,85,90,0.18);
+  }
+
+  .card-head{
+    display:flex; align-items:center; justify-content:space-between; gap:16px;
+    padding:16px 18px; cursor:pointer;
+  }
+  .card-head:hover{background:rgba(255,255,255,0.015);}
+
+  .card-title-wrap{display:flex; align-items:baseline; gap:12px; flex-wrap:wrap;}
+  .card-title{
+    font-family:var(--mono); font-weight:600; font-size:14.5px; color:#e8edf2; letter-spacing:-0.01em;
+  }
+  .card-kicker{font-family:var(--mono); font-size:11px; color:var(--text-faint);}
+
+  .badges{display:flex; gap:6px; flex-shrink:0;}
+  .badge{
+    font-family:var(--mono); font-size:9.5px; letter-spacing:.06em; text-transform:uppercase;
+    padding:3px 7px; border-radius:4px; border:1px solid; white-space:nowrap;
+  }
+  .badge.security{color:var(--red); border-color:rgba(224,85,90,0.35); background:rgba(224,85,90,0.06);}
+  .badge.scale{color:var(--cyan); border-color:rgba(79,184,217,0.35); background:rgba(79,184,217,0.06);}
+  .badge.reliability{color:var(--amber); border-color:rgba(217,164,65,0.35); background:rgba(217,164,65,0.06);}
+  .badge.corrected{color:var(--violet); border-color:rgba(157,124,216,0.35); background:rgba(157,124,216,0.06);}
+
+  .chevron{
+    width:9px; height:9px; flex-shrink:0;
+    border-right:1.5px solid var(--text-faint); border-bottom:1.5px solid var(--text-faint);
+    transform:rotate(45deg); transition:transform .2s ease; margin-right:2px;
+  }
+  .stage.open .chevron{transform:rotate(-135deg);}
+
+  .card-body{
+    max-height:0; overflow:hidden; transition:max-height .28s ease;
+  }
+  .stage.open .card-body{max-height:800px;}
+
+  .card-body-inner{
+    padding:0 18px 20px; border-top:1px solid var(--line-soft);
+    padding-top:14px;
+  }
+  .card-desc{font-size:13.5px; color:var(--text-dim); margin-bottom:14px;}
+
+  .notes{list-style:none; display:flex; flex-direction:column; gap:9px;}
+  .notes li{
+    font-size:13px; color:var(--text); padding-left:16px; position:relative;
+  }
+  .notes li::before{
+    content:'›'; position:absolute; left:0; top:0; color:var(--text-faint); font-family:var(--mono);
+  }
+  .notes li b{color:#eef2f6; font-weight:600;}
+
+  /* branch visual for parallel fallback path */
+  .branch-wrap{position:relative; margin:0 0 16px 0; display:flex; gap:14px;}
+  .branch-wrap::before{
+    content:''; position:absolute; left:-40px; top:-16px; width:1px; height:16px; background:var(--line);
+  }
+  .branch-label{
+    position:absolute; left:-38px; top:-30px; font-family:var(--mono); font-size:10px; color:var(--text-faint);
+    letter-spacing:.06em;
+  }
+  .branch-col{flex:1; min-width:0;}
+
+  /* ---------- SIGNATURE CALLOUT ---------- */
+  .lock{
+    width:14px; height:14px; position:relative; flex-shrink:0;
+  }
+  .lock::before{
+    content:''; position:absolute; left:2px; top:0; width:10px; height:7px;
+    border:1.5px solid var(--red); border-bottom:none; border-radius:5px 5px 0 0;
+  }
+  .lock::after{
+    content:''; position:absolute; left:0; top:6px; width:14px; height:8px;
+    background:var(--red); border-radius:2px;
+    animation:pulse-lock 2.6s ease-in-out infinite;
+  }
+  @keyframes pulse-lock{
+    0%,100%{ box-shadow:0 0 0 0 rgba(224,85,90,0.35); }
+    50%{ box-shadow:0 0 0 6px rgba(224,85,90,0); }
+  }
+
+  /* ---------- FOOTER SUMMARY ---------- */
+  .summary{
+    max-width:920px; margin:56px auto 0; padding:0 24px;
+  }
+  .summary-grid{
+    display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:1px;
+    background:var(--line); border:1px solid var(--line); border-radius:10px; overflow:hidden;
+  }
+  .summary-cell{background:var(--panel); padding:18px;}
+  .summary-num{font-family:var(--mono); font-size:26px; font-weight:700; color:#eef2f6;}
+  .summary-label{font-family:var(--mono); font-size:11px; color:var(--text-faint); text-transform:uppercase; letter-spacing:.08em; margin-top:4px;}
+
+  footer{
+    max-width:920px; margin:40px auto 0; padding:24px 24px 0; border-top:1px solid var(--line);
+    font-family:var(--mono); font-size:11.5px; color:var(--text-faint); display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px;
+  }
+
+  @media (max-width:600px){
+    .pipeline{padding-left:32px;}
+    .stage-index{left:-32px; width:26px; height:26px; font-size:10px;}
+    .card-title{font-size:13px;}
+    .badges{flex-wrap:wrap; justify-content:flex-end;}
+  }
+
+  @media (prefers-reduced-motion: reduce){
+    .eyebrow::before, .lock::after{animation:none;}
+    .card-body, .chevron, .stage{transition:none;}
+  }
+</style>
+</head>
+<body>
+
+<div class="grid-overlay"></div>
+
+<header>
+  <div class="eyebrow">system design — hardened revision</div>
+  <h1>ARES <span>/ Incident Commander pipeline</span></h1>
+  <p class="sub">Every stage below, from sensor to executed action, annotated with what changed from the original draft and why. Click a stage to expand it. Filter by concern to see where the hardening actually lives.</p>
+  <div class="meta-row">
+    <div><b>Comms layer</b> Caspian SDK</div>
+    <div><b>Inference</b> Featherless (OpenAI-compatible)</div>
+    <div><b>Status</b> demo-ready, production gate open</div>
+  </div>
+</header>
+
+<div class="filterbar">
+  <div class="filterbar-inner">
+    <span class="filterbar-label">Filter</span>
+    <div class="chip active" data-tag="all"><span class="dot" style="background:var(--text)"></span>All stages</div>
+    <div class="chip" data-tag="security"><span class="dot"></span>Security</div>
+    <div class="chip" data-tag="scale"><span class="dot"></span>Scale</div>
+    <div class="chip" data-tag="reliability"><span class="dot"></span>Reliability</div>
+    <div class="chip" data-tag="corrected"><span class="dot"></span>Corrected from v1</div>
+  </div>
+</div>
+
+<main>
+  <div class="pipeline" id="pipeline"></div>
+</main>
+
+<div class="summary">
+  <div class="summary-grid" id="summary"></div>
+</div>
+
+<footer>
+  <span>ARES · Autonomous Response &amp; Emergency System</span>
+  <span>hardened design · v2</span>
+</footer>
+
+<script>
+const stages = [
+  {
+    title:"Sensors", kicker:"Wazuh · Sysmon · Suricata · Zeek · CrowdStrike",
+    tags:[],
+    desc:"Raw telemetry sources. Nothing here is trusted — every field they emit is treated as attacker-influenced input downstream.",
+    notes:[]
+  },
+  {
+    title:"Go Ingestion Service", kicker:"HTTP/syslog intake",
+    tags:["scale"],
+    desc:"Accepts alerts over HTTP, syslog, and vendor APIs. Its only job is to normalize shape and hand off — it does no interpretation.",
+    notes:["Stamps a stable <b>alert-hash</b> (source + rule_id + time bucket) here, before Kafka — this is what makes dedup possible three stages later."]
+  },
+  {
+    title:"Redaction / Tokenization Layer", kicker:"new stage — not in v1",
+    tags:["security","corrected"],
+    desc:"Strips or tokenizes anything sensitive before it can reach a third-party model. This did not exist in the original design.",
+    notes:[
+      "Credentials found in raw logs are dropped, never forwarded.",
+      "Hostnames and usernames are tokenized; a local Postgres mapping table lets the dashboard reverse it — the LLM never sees the real value.",
+      "Internal / RFC1918 IPs are filtered out before any external enrichment call (VirusTotal, AbuseIPDB) — otherwise you leak your own network topology to a third party for free."
+    ]
+  },
+  {
+    title:"Kafka", kicker:"partitioned by severity · Redpanda for demo",
+    tags:["scale"],
+    desc:"Decouples ingestion from processing so a burst of alerts can't take the pipeline down.",
+    notes:[
+      "Explicit topic retention (7 days) — raw incident data does not live forever by default.",
+      "Dead-letter topic for malformed events, with alerting on it — a bad payload gets quarantined, not silently dropped or endlessly retried."
+    ]
+  },
+  {
+    title:"Worker Pool", kicker:"Go routines · consumer group",
+    tags:["scale","reliability"],
+    desc:"Multiple workers process events independently so 1,000 simultaneous alerts don't crash a single consumer.",
+    notes:[
+      "Idempotent on the alert-hash from ingestion — a redelivered Kafka message can't spawn a duplicate incident.",
+      "Autoscales on consumer lag rather than a fixed worker count."
+    ]
+  },
+  {
+    title:"Redis", kicker:"cache · session store · rate limiter",
+    tags:["security"],
+    desc:"Same three jobs as v1 — enrichment cache, in-flight incident state, notification rate limiting.",
+    notes:["Now requires TLS + auth, with a TTL on every key so nothing (including cached third-party enrichment data) sits there indefinitely."]
+  },
+  {
+    title:"Classification branch", kicker:"parallel paths, one converges into the other",
+    tags:[],
+    branch:true,
+    branches:[
+      {
+        title:"Featherless LLM", kicker:"OpenAI-compatible · classification + reasoning",
+        tags:["security","corrected"],
+        desc:"Third-party hosted inference. This is a genuine trust boundary — the request leaves your infrastructure.",
+        notes:[
+          "Only ever receives the <b>redacted</b> payload from stage 3, never raw identifiers.",
+          "Prompt wraps untrusted alert fields in explicit delimiters with an instruction not to follow anything found inside them — a hostname or command line is attacker-influenced content, treat it as such.",
+          "Output is validated against a strict JSON schema before anything downstream reads it. Malformed output is rejected, not best-effort parsed."
+        ]
+      },
+      {
+        title:"Rules-based fallback", kicker:"circuit breaker",
+        tags:["reliability"],
+        desc:"Sits in front of the Featherless call with a timeout. If the LLM is slow, rate-limited, or down, triage degrades to rules-only instead of the pipeline going dark.",
+        notes:["A local Ollama model (e.g. Llama 3.2 3B) is a free, zero-dependency second fallback behind the rules engine for demo resilience."]
+      }
+    ]
+  },
+  {
+    title:"Decision Engine", kicker:"correlate · merge · escalate",
+    tags:[],
+    desc:"Unchanged in spirit from v1: multiple related alerts collapse into one incident instead of three separate notifications.",
+    notes:["Correlation key now includes the alert-hash, so merge logic can't be fooled by duplicate redeliveries."]
+  },
+  {
+    title:"Incident Orchestrator → Postgres", kicker:"tenant-scoped · encrypted at rest",
+    tags:["security"],
+    desc:"Stores incidents, tasks, and timeline. Structurally mirrors Caspian's own customer_id / agent_id scoping.",
+    notes:[
+      "Every table carries a <b>tenant_id</b> with row-level security, even with a single tenant today — it's what makes this a platform rather than a script.",
+      "Explicit retention/purge policy; sensitive columns encrypted with pgcrypto."
+    ]
+  },
+  {
+    title:"Caspian — on_message handler", kicker:"one handler, every channel",
+    tags:["corrected"],
+    desc:"Single identity reaching email, Slack, Discord, Telegram. Outbound uses blocks/cards; inbound replies are free text.",
+    notes:[
+      "<b>Correction from v1:</b> Caspian's callback buttons don't yet deliver taps back to the handler — treat a button's value as a label the analyst can also just type. The whole flow is designed around parsed text replies, not button events.",
+      "Card sent to the analyst includes a human-readable task id and confirmation phrase, not just an 'Isolate' button."
+    ]
+  },
+  {
+    title:"Confirmation-Token Gate", kicker:"the addition that wasn't in v1",
+    tags:["security"],
+    signature:true,
+    desc:"Every reply that maps to a destructive action passes through here before anything executes. This is the single biggest gap the original design had.",
+    notes:[
+      "Sender identity from <code>message.sender</code> is checked against the on-call roster — a reply from someone not on shift for that incident is rejected.",
+      "The reply must match a per-task confirmation token embedded in the outbound message (<b>“Reply CONFIRM TASK-8837”</b>), not just contain a keyword like 'isolate'.",
+      "LLM-proposed actions never execute directly. The model proposes, a verified human confirms, only then does the orchestrator act."
+    ]
+  },
+  {
+    title:"Task Execution", kicker:"isolate host · disable account · block IP",
+    tags:[],
+    desc:"Runs only after the gate above clears. Every execution writes an immutable timeline entry.",
+    notes:["Destructive actions are logged with who confirmed, when, and against which token — the audit trail a real company needs after the fact."]
+  },
+  {
+    title:"Dashboard API", kicker:"read-only",
+    tags:["security"],
+    desc:"Serves the incident/timeline view to the frontend.",
+    notes:["Deliberately separate auth path from the action-execution path — a compromised dashboard session still can't trigger a host isolation."]
+  }
+];
+
+const tagLabel = {security:"Security", scale:"Scale", reliability:"Reliability", corrected:"Corrected"};
+
+function badgesHTML(tags){
+  return tags.map(t => `<span class="badge ${t}">${tagLabel[t]}</span>`).join('');
+}
+
+function stageHTML(s, idx){
+  const tagAttr = s.tags.join(' ');
+  return `
+  <div class="stage${s.signature?' signature':''}" data-tags="${tagAttr}">
+    <div class="stage-index">${idx}</div>
+    <div class="card">
+      <div class="card-head" data-toggle>
+        <div class="card-title-wrap">
+          ${s.signature? '<span class="lock"></span>' : ''}
+          <span class="card-title">${s.title}</span>
+          <span class="card-kicker">${s.kicker}</span>
+        </div>
+        <div style="display:flex; align-items:center; gap:10px;">
+          <div class="badges">${badgesHTML(s.tags)}</div>
+          <span class="chevron"></span>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="card-body-inner">
+          <div class="card-desc">${s.desc}</div>
+          ${s.notes.length? `<ul class="notes">${s.notes.map(n=>`<li>${n}</li>`).join('')}</ul>` : ''}
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function branchStageHTML(s, idx){
+  const branchesHTML = s.branches.map(b => {
+    const tagAttr = b.tags.join(' ');
+    return `
+    <div class="branch-col stage" data-tags="${tagAttr}">
+      <div class="card">
+        <div class="card-head" data-toggle>
+          <div class="card-title-wrap">
+            <span class="card-title">${b.title}</span>
+            <span class="card-kicker">${b.kicker}</span>
+          </div>
+          <div style="display:flex; align-items:center; gap:10px;">
+            <div class="badges">${badgesHTML(b.tags)}</div>
+            <span class="chevron"></span>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="card-body-inner">
+            <div class="card-desc">${b.desc}</div>
+            ${b.notes.length? `<ul class="notes">${b.notes.map(n=>`<li>${n}</li>`).join('')}</ul>` : ''}
+          </div>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+
+  return `
+  <div class="stage" data-tags="">
+    <div class="stage-index">${idx}</div>
+    <div class="branch-wrap">
+      <span class="branch-label">parallel</span>
+      ${branchesHTML}
+    </div>
+  </div>`;
+}
+
+const pipeline = document.getElementById('pipeline');
+let html = '';
+stages.forEach((s, i) => {
+  html += s.branch ? branchStageHTML(s, i+1) : stageHTML(s, i+1);
+});
+pipeline.innerHTML = html;
+
+// accordion toggle
+pipeline.addEventListener('click', (e) => {
+  const head = e.target.closest('[data-toggle]');
+  if(!head) return;
+  const stage = head.closest('.stage');
+  stage.classList.toggle('open');
+});
+
+// filter chips
+const chips = document.querySelectorAll('.chip');
+chips.forEach(chip => {
+  chip.addEventListener('click', () => {
+    const tag = chip.dataset.tag;
+    if(tag === 'all'){
+      chips.forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+      document.querySelectorAll('.stage').forEach(s => s.classList.remove('dim'));
+      return;
+    }
+    document.querySelector('[data-tag="all"]').classList.remove('active');
+    chip.classList.toggle('active');
+
+    const activeTags = Array.from(chips)
+      .filter(c => c.classList.contains('active') && c.dataset.tag !== 'all')
+      .map(c => c.dataset.tag);
+
+    if(activeTags.length === 0){
+      document.querySelector('[data-tag="all"]').classList.add('active');
+      document.querySelectorAll('.stage').forEach(s => s.classList.remove('dim'));
+      return;
+    }
+
+    document.querySelectorAll('.stage').forEach(s => {
+      const stageTags = (s.dataset.tags || '').split(' ').filter(Boolean);
+      const match = stageTags.some(t => activeTags.includes(t));
+      s.classList.toggle('dim', stageTags.length === 0 ? true : !match);
+    });
+  });
+});
+
+// summary counts
+const counts = {security:0, scale:0, reliability:0, corrected:0};
+function tally(s){ s.tags.forEach(t => { if(counts[t]!==undefined) counts[t]++; }); }
+stages.forEach(s => s.branch ? s.branches.forEach(tally) : tally(s));
+
+const summary = document.getElementById('summary');
+summary.innerHTML = `
+  <div class="summary-cell"><div class="summary-num">${stages.length + stages.filter(s=>s.branch).length}</div><div class="summary-label">Pipeline stages</div></div>
+  <div class="summary-cell"><div class="summary-num" style="color:var(--red)">${counts.security}</div><div class="summary-label">Security hardened</div></div>
+  <div class="summary-cell"><div class="summary-num" style="color:var(--cyan)">${counts.scale}</div><div class="summary-label">Scale hardened</div></div>
+  <div class="summary-cell"><div class="summary-num" style="color:var(--amber)">${counts.reliability}</div><div class="summary-label">Reliability hardened</div></div>
+  <div class="summary-cell"><div class="summary-num" style="color:var(--violet)">${counts.corrected}</div><div class="summary-label">Corrected from v1</div></div>
+`;
+
+// open the signature stage by default
+document.querySelector('.stage.signature')?.classList.add('open');
+</script>
+
+</body>
+</html>
