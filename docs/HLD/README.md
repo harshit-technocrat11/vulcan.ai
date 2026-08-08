@@ -1,0 +1,238 @@
+# Vulcan.ai Architecture
+
+```mermaid
+flowchart TD
+
+%% ==============================
+%% External Sources
+%% ==============================
+
+subgraph Sources["Security Infrastructure"]
+    W[Wazuh]
+    S[Sysmon]
+    Z[Zeek]
+    SU[Suricata]
+    API[External APIs]
+end
+
+%% ==============================
+%% Ingestion Layer
+%% ==============================
+
+subgraph Ingestion["Alert Ingestion Layer"]
+    ING[Go Ingestion Service<br/>Gin + REST + Webhooks]
+    VAL[Alert Validator]
+    NOR[Normalizer]
+end
+
+W --> ING
+S --> ING
+Z --> ING
+SU --> ING
+API --> ING
+
+ING --> VAL
+VAL --> NOR
+
+%% ==============================
+%% Event Queue
+%% ==============================
+
+subgraph Messaging["Messaging Layer"]
+    KAFKA[(Kafka Topics)]
+end
+
+NOR --> KAFKA
+
+%% ==============================
+%% Worker Pool
+%% ==============================
+
+subgraph Workers["Worker Pool"]
+    W1[Worker 1]
+    W2[Worker 2]
+    W3[Worker N]
+end
+
+KAFKA --> W1
+KAFKA --> W2
+KAFKA --> W3
+
+%% ==============================
+%% Cache
+%% ==============================
+
+subgraph Cache["Redis Cache"]
+    REDIS[(Redis)]
+
+    VTCache[VirusTotal Cache]
+    CVECache[CVE Cache]
+    MITRECache[MITRE Cache]
+    SessionCache[Conversation State]
+end
+
+REDIS --> VTCache
+REDIS --> CVECache
+REDIS --> MITRECache
+REDIS --> SessionCache
+
+%% ==============================
+%% Threat Intelligence
+%% ==============================
+
+subgraph ThreatIntel["Threat Intelligence"]
+    VT[VirusTotal]
+    ABUSE[AbuseIPDB]
+    MITRE[MITRE ATT&CK]
+    CVE[CVE Database]
+end
+
+%% ==============================
+%% AI Layer
+%% ==============================
+
+subgraph AI["AI Decision Layer"]
+
+    LLM[Featherless AI<br/>Qwen / Llama]
+
+    CORRELATE[Incident Correlation]
+
+    SCORE[Risk Scoring]
+
+    RUNBOOK[Runbook Generator]
+
+end
+
+%% ==============================
+%% Database
+%% ==============================
+
+subgraph Database["Persistent Storage"]
+
+    PG[(PostgreSQL)]
+
+    Alerts[(Alerts)]
+
+    Incidents[(Incidents)]
+
+    Tasks[(Tasks)]
+
+    Timeline[(Timeline)]
+
+    Users[(Users)]
+
+end
+
+%% ==============================
+%% Orchestrator
+%% ==============================
+
+subgraph Orchestrator["Incident Commander"]
+
+    DECIDE[Decision Engine]
+
+    ASSIGN[Task Assignment]
+
+    ESCALATE[Escalation Engine]
+
+    TRACK[Acknowledgement Tracker]
+
+end
+
+%% ==============================
+%% Communication
+%% ==============================
+
+subgraph Caspian["Caspian SDK"]
+
+    HANDLER[Single Handler]
+
+end
+
+%% ==============================
+%% Channels
+%% ==============================
+
+subgraph Channels["Communication Channels"]
+
+    EMAIL[Email]
+
+    TELEGRAM[Telegram]
+
+    SLACK[Slack]
+
+    DISCORD[Discord]
+
+end
+
+%% ==============================
+%% Dashboard
+%% ==============================
+
+subgraph Dashboard["Frontend"]
+
+    NEXT[Next.js Dashboard]
+
+end
+
+%% ==============================
+%% FLOW
+%% ==============================
+
+W1 --> REDIS
+W2 --> REDIS
+W3 --> REDIS
+
+REDIS --> VT
+REDIS --> ABUSE
+REDIS --> MITRE
+REDIS --> CVE
+
+VT --> LLM
+ABUSE --> LLM
+MITRE --> LLM
+CVE --> LLM
+
+W1 --> LLM
+W2 --> LLM
+W3 --> LLM
+
+LLM --> CORRELATE
+CORRELATE --> SCORE
+SCORE --> RUNBOOK
+
+RUNBOOK --> DECIDE
+
+DECIDE --> PG
+
+PG --> Alerts
+PG --> Incidents
+PG --> Tasks
+PG --> Timeline
+PG --> Users
+
+DECIDE --> ASSIGN
+DECIDE --> ESCALATE
+DECIDE --> TRACK
+
+ASSIGN --> HANDLER
+ESCALATE --> HANDLER
+TRACK --> HANDLER
+
+HANDLER --> EMAIL
+HANDLER --> TELEGRAM
+HANDLER --> SLACK
+HANDLER --> DISCORD
+
+HANDLER --> NEXT
+
+NEXT --> PG
+
+EMAIL -. Reply .-> HANDLER
+TELEGRAM -. Reply .-> HANDLER
+SLACK -. Reply .-> HANDLER
+DISCORD -. Reply .-> HANDLER
+
+HANDLER --> TRACK
+TRACK --> PG 
+```
