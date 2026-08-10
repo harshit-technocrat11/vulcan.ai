@@ -1,6 +1,11 @@
-from caspian_sdk import CommClient
+"""Legacy Caspian helpers kept for the manual smoke-test script.
 
-client = CommClient()
+New code should use ``app.integrations.caspian.client``.
+"""
+
+from app.integrations.caspian.client import get_comm_client
+
+client = get_comm_client()
 
 
 def setup_slack():

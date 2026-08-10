@@ -1,6 +1,8 @@
-def main():
-    print("Hello from ai-layer!")
+"""Thin entrypoint so ``uv run fastapi dev`` works from this directory.
 
+The real FastAPI app lives in ``app.main``.
+"""
 
-if __name__ == "__main__":
-    main()
+from app.main import app
+
+__all__ = ["app"]
