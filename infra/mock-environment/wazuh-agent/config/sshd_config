@@ -1,0 +1,8 @@
+# Sentinel lab - SSH server config for the vulnerable target host.
+Port 22
+PermitRootLogin no
+PasswordAuthentication yes
+ChallengeResponseAuthentication no
+UsePAM no
+X11Forwarding no
+Subsystem sftp internal-sftp

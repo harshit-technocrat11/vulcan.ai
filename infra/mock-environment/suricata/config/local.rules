@@ -1,0 +1,16 @@
+# Sentinel lab-local detection rules.
+# These provide deterministic detections for the simulated attacks even if the
+# ET Open ruleset could not be downloaded at build time.
+# SIDs 2000000-2000999 are reserved for local/custom rules.
+
+# Fast TCP port scan (e.g. nmap -sS) - 25+ SYN packets in 5 seconds.
+alert tcp any any -> any any (msg:"SENTINEL TCP port scan detected"; flags:S; threshold: type both, track by_src, count 25, seconds 5; classtype:attempted-recon; sid:2000001; rev:1;)
+
+# SSH brute force at network level - many connections to port 22.
+alert tcp any any -> any 22 (msg:"SENTINEL SSH brute force (rapid connections)"; threshold: type both, track by_src, count 15, seconds 10; classtype:attempted-admin; sid:2000002; rev:1;)
+
+# Web attack - naive SQL injection probes against DVWA.
+alert http any any -> any any (msg:"SENTINEL Web attack - SQL injection probe"; content:"select"; http_uri; nocase; content:"from"; http_uri; nocase; classtype:web-application-attack; sid:2000003; rev:1;)
+
+# Web attack - command injection probes against DVWA.
+alert http any any -> any any (msg:"SENTINEL Web attack - command injection probe"; content:"/etc/passwd"; http_uri; nocase; classtype:web-application-attack; sid:2000004; rev:1;)

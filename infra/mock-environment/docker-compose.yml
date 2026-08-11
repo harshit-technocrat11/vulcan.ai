@@ -1,0 +1,112 @@
+name: sentinel-mock
+
+networks:
+  mocknet:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/24
+
+services:
+  # ------------------------------------------------------------------
+  # Redis - the queue the Ingestion service publishes normalized alerts to
+  # ------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: sentinel-redis
+    restart: unless-stopped
+    networks:
+      - mocknet
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--appendonly", "no"]
+
+  # ------------------------------------------------------------------
+  # Mock System (target) - deliberately vulnerable web app (DVWA)
+  # Attacks against this host are what Suricata should detect.
+  # ------------------------------------------------------------------
+  dvwa:
+    image: vulnerables/web-dvwa:latest
+    container_name: sentinel-dvwa
+    restart: unless-stopped
+    networks:
+      - mocknet
+    ports:
+      - "8081:80"
+
+  # ------------------------------------------------------------------
+  # Suricata - network IDS. Runs in the Docker engine network namespace
+  # (host networking) and captures the mocknet bridge so it can inspect
+  # all traffic between the attacker and the targets.
+  # ------------------------------------------------------------------
+  suricata:
+    build: ./suricata
+    container_name: sentinel-suricata
+    restart: unless-stopped
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    environment:
+      MONITOR_SUBNET: "172.20.0.0/24"
+      INGEST_URL: "http://host.docker.internal:8080/webhooks/suricata"
+
+  # ------------------------------------------------------------------
+  # Attacker - container with nmap, hydra and curl used to launch the
+  # simulated attacks (port scans, SSH brute force, web exploits).
+  # ------------------------------------------------------------------
+  attacker:
+    build: ./attacker
+    container_name: sentinel-attacker
+    restart: unless-stopped
+    stdin_open: true
+    tty: true
+    networks:
+      - mocknet
+    depends_on:
+      - dvwa
+      - wazuh-agent
+
+  # ------------------------------------------------------------------
+  # Wazuh Manager - receives events from agents, correlates them, and
+  # forwards alerts to the Ingestion service via custom-remote.
+  # API (port 55000) exposed with a known password for verification.
+  # ------------------------------------------------------------------
+  wazuh-manager:
+    image: wazuh/wazuh-manager:4.14.7
+    container_name: sentinel-wazuh-manager
+    hostname: wazuh-manager
+    restart: unless-stopped
+    networks:
+      - mocknet
+    ports:
+      - "1514:1514/tcp"
+      - "1514:1514/udp"
+      - "1515:1515/tcp"
+      - "55000:55000/tcp"
+    environment:
+      WAZUH_HOSTNAME: wazuh-manager
+      API_USERNAME: admin
+      API_PASSWORD: ChangeMe123!
+    volumes:
+      - ./wazuh-manager/ossec.conf:/wazuh-config-mount/etc/ossec.conf:ro
+
+  # ------------------------------------------------------------------
+  # Wazuh Agent + SSH target - a real host running sshd with weak
+  # credentials, monitored by the Wazuh agent. SSH brute-force attempts
+  # are detected here and reported to the manager.
+  # ------------------------------------------------------------------
+  wazuh-agent:
+    build: ./wazuh-agent
+    container_name: sentinel-wazuh-agent
+    hostname: wazuh-agent
+    restart: unless-stopped
+    networks:
+      - mocknet
+    ports:
+      - "2222:22"
+    environment:
+      WAZUH_MANAGER_HOST: wazuh-manager
+      WAZUH_AGENT_NAME: sentinel-ssh-target
+    depends_on:
+      - wazuh-manager

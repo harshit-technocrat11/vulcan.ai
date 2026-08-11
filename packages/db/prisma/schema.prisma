@@ -1,0 +1,214 @@
+// Sentinel - core persistence schema (Prisma 7 + Supabase PostgreSQL).
+//
+// Mirrors the entities from architecture section 13. Prisma 7 moved the
+// connection URL out of the schema: it lives in prisma.config.ts
+// (DATABASE_URL for Migrate, DIRECT_URL as the direct connection) and the
+// runtime client is created with a driver adapter (@prisma/adapter-pg).
+// The generated client is emitted into ../src/generated so @repo/db is
+// self-contained for consuming apps (pnpm workspaces do not share a hoisted
+// .prisma folder).
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// --------------------------------------------------------------------------
+// Enums
+// --------------------------------------------------------------------------
+
+enum Role {
+  USER
+  ANALYST
+  ADMIN
+}
+
+enum AlertStatus {
+  NEW
+  ENRICHED
+  CORRELATED
+  INVESTIGATING
+  RESOLVED
+}
+
+enum IncidentStatus {
+  OPEN
+  INVESTIGATING
+  RESOLVED
+  CLOSED
+}
+
+enum InvestigationStatus {
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+enum AgentRunStatus {
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+enum MessageRole {
+  USER
+  ASSISTANT
+  TOOL
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+// --------------------------------------------------------------------------
+// Models
+// --------------------------------------------------------------------------
+
+model User {
+  id            String         @id @default(uuid())
+  email         String         @unique
+  name          String?
+  passwordHash  String?
+  role          Role           @default(USER)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  conversations Conversation[]
+  investigations Investigation[]
+  notifications Notification[]
+}
+
+model Alert {
+  id          String           @id @default(uuid())
+  /// Natural key produced by the ingestion service, e.g. "sentinel-...".
+  sourceId    String           @unique
+  /// wazuh | suricata | zeek | ...
+  source      String
+  /// 1..10 severity (10 = most severe).
+  severity    Int
+  title       String
+  description String
+  timestamp   DateTime
+  hostName    String?
+  hostIp      String?
+  observables Json
+  raw         Json
+  status      AlertStatus      @default(NEW)
+  threatIntel ThreatIntelResult?
+  incidentId  String?
+  incident    Incident?        @relation(fields: [incidentId], references: [id], onDelete: SetNull)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@index([incidentId])
+  @@index([source, timestamp])
+}
+
+model ThreatIntelResult {
+  id         String   @id @default(uuid())
+  alertId    String   @unique
+  alert      Alert    @relation(fields: [alertId], references: [id], onDelete: Cascade)
+  /// ip | hash | domain | url | ttp | cve
+  kind       String
+  value      String
+  /// malicious | suspicious | benign | unknown
+  verdict    String
+  /// 0..100 risk score.
+  score      Int
+  /// 0..1 confidence.
+  confidence Float
+  results    Json
+  failures   Json
+  fetchedAt  DateTime @default(now())
+}
+
+model Incident {
+  id              String          @id @default(uuid())
+  title           String
+  /// Maximum severity of attached alerts.
+  severity        Int
+  status          IncidentStatus  @default(OPEN)
+  correlationKeys Json
+  alerts          Alert[]
+  investigation   Investigation?
+  notifications   Notification[]
+  openedAt        DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@index([status])
+}
+
+model Investigation {
+  id          String              @id @default(uuid())
+  incidentId  String              @unique
+  incident    Incident            @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  status      InvestigationStatus @default(RUNNING)
+  summary     String?
+  userId      String?
+  user        User?               @relation(fields: [userId], references: [id], onDelete: SetNull)
+  agentRuns   AgentRun[]
+  startedAt   DateTime            @default(now())
+  completedAt DateTime?
+}
+
+model AgentRun {
+  id              String          @id @default(uuid())
+  investigationId String
+  investigation   Investigation   @relation(fields: [investigationId], references: [id], onDelete: Cascade)
+  status          AgentRunStatus  @default(RUNNING)
+  model           String
+  toolsUsed       Json
+  transcript      Json
+  error           String?
+  startedAt       DateTime        @default(now())
+  completedAt     DateTime?
+
+  @@index([investigationId])
+}
+
+model Conversation {
+  id        String    @id @default(uuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String?
+  messages  Message[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([userId])
+}
+
+model Message {
+  id             String       @id @default(uuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  role           MessageRole
+  content        String
+  createdAt      DateTime     @default(now())
+
+  @@index([conversationId])
+}
+
+model Notification {
+  id         String             @id @default(uuid())
+  userId     String?
+  user       User?              @relation(fields: [userId], references: [id], onDelete: SetNull)
+  incidentId String?
+  incident   Incident?          @relation(fields: [incidentId], references: [id], onDelete: SetNull)
+  /// alert.created | incident.opened | ...
+  type       String
+  /// email | slack | pagerduty | webhook
+  channel    String
+  status     NotificationStatus @default(PENDING)
+  payload    Json
+  createdAt  DateTime           @default(now())
+  sentAt     DateTime?
+
+  @@index([status])
+}

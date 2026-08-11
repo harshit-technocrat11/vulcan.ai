@@ -6,11 +6,7 @@ node_modules
 .pnp.js
 
 # Local env files
-.env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+.env.*
 
 # Testing
 coverage
@@ -38,3 +34,6 @@ yarn-error.log*
 *.pem
 
 prompts
+# Prisma generated client (regenerated via pnpm install -> postinstall -> prisma generate)
+packages/db/src/generated
+packages/db/dist
