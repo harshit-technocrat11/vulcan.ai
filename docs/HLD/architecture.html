@@ -49,6 +49,7 @@
             ING[Go Ingestion Service<br/>Gin + REST + Webhooks]
             VAL[Alert Validator]
             NOR[Normalizer]
+            TOK[Redaction / Tokenization Layer]
         end
         
         W --> ING
@@ -59,6 +60,7 @@
         
         ING --> VAL
         VAL --> NOR
+        NOR --> TOK
         
         %% ==============================
         %% Event Queue
@@ -68,7 +70,7 @@
             KAFKA[(Kafka Topics)]
         end
         
-        NOR --> KAFKA
+        TOK --> KAFKA
         
         %% ==============================
         %% Worker Pool

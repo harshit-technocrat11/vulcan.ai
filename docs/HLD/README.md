@@ -23,6 +23,7 @@ subgraph Ingestion["Alert Ingestion Layer"]
     ING[Go Ingestion Service<br/>Gin + REST + Webhooks]
     VAL[Alert Validator]
     NOR[Normalizer]
+    TOK[Redaction / Tokenization Layer]
 end
 
 W --> ING
@@ -33,6 +34,7 @@ API --> ING
 
 ING --> VAL
 VAL --> NOR
+NOR --> TOK
 
 %% ==============================
 %% Event Queue
@@ -42,7 +44,7 @@ subgraph Messaging["Messaging Layer"]
     KAFKA[(Kafka Topics)]
 end
 
-NOR --> KAFKA
+TOK --> KAFKA
 
 %% ==============================
 %% Worker Pool
