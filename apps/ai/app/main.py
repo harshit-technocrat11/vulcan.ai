@@ -6,9 +6,10 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from app.api.routes import chat, health
+from app.api.routes import health
+# from app.api.routes import chat  # TODO: enable when chat route is ready
 from app.config.settings import get_settings
-from app.core.logging import configure_logging, get_logger
+from app.core.logging import get_logger, setup_logging
 
 logger = get_logger(__name__)
 
@@ -16,7 +17,7 @@ logger = get_logger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
-    configure_logging(settings.log_level)
+    setup_logging()
     logger.info(
         "application startup app=%s environment=%s",
         settings.app_name,
@@ -35,7 +36,7 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(health.router)
-    app.include_router(chat.router, prefix="/v1")
+    # app.include_router(chat.router, prefix="/v1")  # TODO: enable when chat route is ready
 
     return app
 
